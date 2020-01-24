@@ -20,6 +20,17 @@ firebase.initializeApp(firebaseConfig);
 
 const db = admin.firestore();
 
+// validations
+const isEmpty = value => {
+  if (value.trim() === "") return true;
+  return false;
+};
+const isEmail = email => {
+  const regEx = /^(([^<>()\[\]\\.,;:\s@"]+(\.[^<>()\[\]\\.,;:\s@"]+)*)|(".+"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/;
+  if (email.match(regEx)) return true;
+  return false;
+};
+
 app.get("/screams", (req, res) => {
   db.collection("screams")
     .orderBy("createdAt", "desc")
@@ -39,12 +50,52 @@ app.get("/screams", (req, res) => {
     });
 });
 
-app.post("/scream", (req, res) => {
+//Middleware
+const FBAuth = (req, res, next) => {
+  let idToken;
+  if (
+    req.headers.authorization &&
+    req.headers.authorization.startsWith("Bearer ")
+  ) {
+    idToken = req.headers.authorization.split("Bearer ")[1];
+  } else {
+    console.error("No token found");
+    return res.status(403).json({ error: "Unauthorized" });
+  }
+
+  admin
+    .auth()
+    .verifyIdToken(idToken)
+    .then(decodedToken => {
+      req.user = decodedToken; // main decodedToken line
+      console.log(decodedToken);
+      return db
+        .collection("users")
+        .where("userId", "==", req.user.uid)
+        .limit(1)
+        .get();
+    })
+    .then(data => {
+      req.user.handle = data.docs[0].data().handle;
+      return next();
+    })
+    .catch(err => {
+      console.error("Error while verifying token ", err);
+      return res.status(403).json(err);
+    });
+};
+
+app.post("/scream", FBAuth, (req, res) => {
   const newScream = {
     body: req.body.body,
-    userHandle: req.body.userHandle,
+    userHandle: req.user.handle,
     createdAt: new Date().toISOString()
   };
+
+  let errors = {};
+  if (isEmpty(newScream.body)) errors.body = "Body must not be empty";
+
+  if (Object.keys(errors).length > 0) return res.status(400).json(errors);
 
   db.collection("screams")
     .add(newScream)
@@ -56,16 +107,6 @@ app.post("/scream", (req, res) => {
       console.error(err);
     });
 });
-
-const isEmpty = value => {
-  if (value.trim() === "") return true;
-  return false;
-};
-const isEmail = email => {
-  const regEx = /^(([^<>()\[\]\\.,;:\s@"]+(\.[^<>()\[\]\\.,;:\s@"]+)*)|(".+"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/;
-  if (email.match(regEx)) return true;
-  return false;
-};
 
 //user registration
 app.post("/signup", (req, res) => {
