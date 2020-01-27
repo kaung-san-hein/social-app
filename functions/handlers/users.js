@@ -5,8 +5,13 @@ const firebaseConfig = require("../util/config");
 const firebase = require("firebase");
 firebase.initializeApp(firebaseConfig);
 
-const { validateSignupData, validateLoginData } = require("../util/validators");
+const {
+  validateSignupData,
+  validateLoginData,
+  reduceUserDetails
+} = require("../util/validators");
 
+// user signup
 exports.signup = (req, res) => {
   const newUser = {
     email: req.body.email,
@@ -60,6 +65,7 @@ exports.signup = (req, res) => {
     });
 };
 
+// user login
 exports.login = (req, res) => {
   const user = {
     email: req.body.email,
@@ -90,6 +96,50 @@ exports.login = (req, res) => {
     });
 };
 
+// add user details
+exports.addUserDetails = (req, res) => {
+  let userDetails = reduceUserDetails(req.body);
+
+  db.doc(`/users/${req.user.handle}`)
+    .update(userDetails)
+    .then(() => {
+      return res.status(201).json({ message: "Details added successfully" });
+    })
+    .catch(err => {
+      console.error(err);
+      return res.status(500).json({ error: err.code });
+    });
+};
+
+// get own user details
+exports.getAuthenticatedUser = (req, res) => {
+  let userData = {};
+
+  db.doc(`/users/${req.user.handle}`)
+    .get()
+    .then(doc => {
+      if (doc.exists) {
+        userData.credentials = doc.data();
+        return db
+          .collection("likes")
+          .where("userHandle", "==", req.user.handle)
+          .get();
+      }
+    })
+    .then(data => {
+      userData.likes = [];
+      data.forEach(doc => {
+        userData.likes.push(doc.data());
+      });
+      return res.status(201).json({ userData });
+    })
+    .catch(err => {
+      console.error = err;
+      return res.status(500).json({ error: err.code });
+    });
+};
+
+// image uploaded
 exports.uploadImage = (req, res) => {
   const BusBoy = require("busboy");
   const path = require("path");
